@@ -1,1 +1,4 @@
 node_modules/
+worker.log
+run-worker.cmd
+.env.local

@@ -1,9 +1,12 @@
 name: Trendyol fiyat kontrolü
 
 on:
-  schedule:
-    # Her 3 saatte bir (UTC). Türkiye saatiyle 03:00, 06:00, 09:00 ...
-    - cron: '0 */3 * * *'
+  # NOT: GitHub sunucu IP'leri Trendyol tarafından engellendiği için
+  # otomatik zamanlama kapatıldı. İleride residential proxy veya ücretli
+  # scraping servisi eklenirse 'schedule' bloğu yeniden açılabilir.
+  #
+  # schedule:
+  #   - cron: '0 */3 * * *'
   workflow_dispatch:
     inputs:
       test_urls:
