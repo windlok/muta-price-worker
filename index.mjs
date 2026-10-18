@@ -99,6 +99,55 @@ async function dismissConsent(page) {
   }
 }
 
+async function searchStore(page, platform, query) {
+  const buildUrl = SEARCH_URLS[platform];
+  if (!buildUrl) return [];
+  const searchUrl = buildUrl(query);
+  await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+  await dismissConsent(page);
+  await page.waitForTimeout(2500);
+
+  return page.evaluate(({ platform: site, searchUrl: base, selectors }) => {
+    const parsePrice = (raw) => {
+      const text = String(raw ?? '').replace(/[^\d.,]/g, '').trim();
+      if (!text) return null;
+      const comma = text.lastIndexOf(',');
+      const dot = text.lastIndexOf('.');
+      const normalized = comma > dot
+        ? text.replace(/\./g, '').replace(',', '.')
+        : text.replace(/,/g, '');
+      const value = Number.parseFloat(normalized);
+      return Number.isFinite(value) ? value : null;
+    };
+    const output = [];
+    const seen = new Set();
+    for (const selector of selectors) {
+      for (const card of document.querySelectorAll(selector)) {
+        const link = card.querySelector('a[href]');
+        const href = link?.href || '';
+        const name = (card.querySelector('h1,h2,h3,h4,[class*="name"],[class*="title"]')
+          ?.textContent || link?.textContent || '').replace(/\s+/g, ' ').trim();
+        const rawPrice = card.querySelector(
+          '[data-testid*="price"], [class*="price"], [class*="fiyat"]',
+        )?.textContent;
+        const image = card.querySelector('img')?.src || null;
+        if (!href || !name || seen.has(href)) continue;
+        seen.add(href);
+        output.push({
+          platform: site,
+          name,
+          url: new URL(href, base).toString(),
+          price: parsePrice(rawPrice),
+          image_url: image,
+        });
+        if (output.length >= 12) return output;
+      }
+      if (output.length >= 12) break;
+    }
+    return output;
+  }, { platform, searchUrl, selectors: SEARCH_SELECTORS });
+}
+
 async function scrapePrice(page, url) {
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
   await dismissConsent(page);
@@ -113,56 +162,6 @@ async function scrapePrice(page, url) {
     } catch {
       // sıradakini dene
     }
-  }
-
-  async function searchStore(page, platform, query) {
-    const buildUrl = SEARCH_URLS[platform];
-    if (!buildUrl) return [];
-    const searchUrl = buildUrl(query);
-    await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
-    await dismissConsent(page);
-    await page.waitForTimeout(2500);
-
-    const results = await page.evaluate(({ platform: site, searchUrl: base, selectors }) => {
-      const parsePrice = (raw) => {
-        const text = String(raw ?? '').replace(/[^\d.,]/g, '').trim();
-        if (!text) return null;
-        const comma = text.lastIndexOf(',');
-        const dot = text.lastIndexOf('.');
-        const normalized = comma > dot
-          ? text.replace(/\./g, '').replace(',', '.')
-          : text.replace(/,/g, '');
-        const value = Number.parseFloat(normalized);
-        return Number.isFinite(value) ? value : null;
-      };
-      const output = [];
-      const seen = new Set();
-      for (const selector of selectors) {
-        for (const card of document.querySelectorAll(selector)) {
-          const link = card.querySelector('a[href]');
-          const href = link?.href || '';
-          const name = (card.querySelector('h1,h2,h3,h4,[class*="name"],[class*="title"]')
-            ?.textContent || link?.textContent || '').replace(/\s+/g, ' ').trim();
-          const rawPrice = card.querySelector(
-            '[data-testid*="price"], [class*="price"], [class*="fiyat"]',
-          )?.textContent;
-          const image = card.querySelector('img')?.src || null;
-          if (!href || !name || seen.has(href)) continue;
-          seen.add(href);
-          output.push({
-            platform: site,
-            name,
-            url: new URL(href, base).toString(),
-            price: parsePrice(rawPrice),
-            image_url: image,
-          });
-          if (output.length >= 12) return output;
-        }
-        if (output.length >= 12) break;
-      }
-      return output;
-    }, { platform, searchUrl, selectors: SEARCH_SELECTORS });
-    return results;
   }
 
   if (price == null) {
