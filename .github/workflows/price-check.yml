@@ -5,6 +5,11 @@ on:
     # Her 3 saatte bir (UTC). Türkiye saatiyle 03:00, 06:00, 09:00 ...
     - cron: '0 */3 * * *'
   workflow_dispatch:
+    inputs:
+      test_urls:
+        description: 'Test URL listesi (virgülle ayır, boş = normal çalışma)'
+        required: false
+        type: string
 
 concurrency:
   group: price-check
@@ -37,3 +42,4 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TEST_URLS: ${{ inputs.test_urls }}
