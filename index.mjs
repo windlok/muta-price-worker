@@ -1,4 +1,4 @@
-// Trendyol fiyat robotu — gerçek Chromium (Playwright) ile çalışır.
+// Mağaza fiyat robotu — gerçek Chromium (Playwright) ile çalışır.
 // GitHub Actions zamanlayıcısı her 3 saatte bir çağırır.
 // Yerel test: TEST_URLS="https://www.trendyol.com/..." node index.mjs
 
@@ -12,6 +12,28 @@ const PRICE_SELECTORS = [
   '.prc-slg',
   '[data-testid="product-price"]',
   '.product-price',
+];
+
+const SEARCH_URLS = {
+  Trendyol: (query) => `https://www.trendyol.com/sr?q=${encodeURIComponent(query)}`,
+  n11: (query) => `https://www.n11.com/arama?q=${encodeURIComponent(query)}`,
+  Hepsiburada: (query) =>
+    `https://www.hepsiburada.com/ara?q=${encodeURIComponent(query)}`,
+  Amazon: (query) =>
+    `https://www.amazon.com.tr/s?k=${encodeURIComponent(query)}`,
+  ÇiçekSepeti: (query) =>
+    `https://www.ciceksepeti.com/arama?query=${encodeURIComponent(query)}`,
+  Pazarama: (query) =>
+    `https://www.pazarama.com/arama?q=${encodeURIComponent(query)}`,
+};
+
+const SEARCH_SELECTORS = [
+  '[data-testid="product-card"]',
+  '[data-testid="product-card-wrapper"]',
+  'article',
+  '[class*="productCard"]',
+  '[class*="product-card"]',
+  '[class*="productListContent"]',
 ];
 
 const CONSENT_SELECTORS = [
@@ -93,6 +115,56 @@ async function scrapePrice(page, url) {
     }
   }
 
+  async function searchStore(page, platform, query) {
+    const buildUrl = SEARCH_URLS[platform];
+    if (!buildUrl) return [];
+    const searchUrl = buildUrl(query);
+    await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await dismissConsent(page);
+    await page.waitForTimeout(2500);
+
+    const results = await page.evaluate(({ platform: site, searchUrl: base, selectors }) => {
+      const parsePrice = (raw) => {
+        const text = String(raw ?? '').replace(/[^\d.,]/g, '').trim();
+        if (!text) return null;
+        const comma = text.lastIndexOf(',');
+        const dot = text.lastIndexOf('.');
+        const normalized = comma > dot
+          ? text.replace(/\./g, '').replace(',', '.')
+          : text.replace(/,/g, '');
+        const value = Number.parseFloat(normalized);
+        return Number.isFinite(value) ? value : null;
+      };
+      const output = [];
+      const seen = new Set();
+      for (const selector of selectors) {
+        for (const card of document.querySelectorAll(selector)) {
+          const link = card.querySelector('a[href]');
+          const href = link?.href || '';
+          const name = (card.querySelector('h1,h2,h3,h4,[class*="name"],[class*="title"]')
+            ?.textContent || link?.textContent || '').replace(/\s+/g, ' ').trim();
+          const rawPrice = card.querySelector(
+            '[data-testid*="price"], [class*="price"], [class*="fiyat"]',
+          )?.textContent;
+          const image = card.querySelector('img')?.src || null;
+          if (!href || !name || seen.has(href)) continue;
+          seen.add(href);
+          output.push({
+            platform: site,
+            name,
+            url: new URL(href, base).toString(),
+            price: parsePrice(rawPrice),
+            image_url: image,
+          });
+          if (output.length >= 12) return output;
+        }
+        if (output.length >= 12) break;
+      }
+      return output;
+    }, { platform, searchUrl, selectors: SEARCH_SELECTORS });
+    return results;
+  }
+
   if (price == null) {
     const lds = await page.locator('script[type="application/ld+json"]').allTextContents();
     for (const t of lds) {
@@ -150,6 +222,47 @@ if (dryUrls.length) {
     }
     await page.close();
   }
+  await browser.close();
+  process.exit(0);
+}
+
+const searchQuery = (process.env.SEARCH_QUERY || '').trim();
+if (searchQuery) {
+  const searchSupabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+  );
+  const requestedPlatforms = (process.env.SEARCH_PLATFORMS || Object.keys(SEARCH_URLS).join(','))
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => SEARCH_URLS[value]);
+  const results = [];
+  for (const platform of requestedPlatforms) {
+    const page = await newPage(context);
+    try {
+      const found = await searchStore(page, platform, searchQuery);
+      results.push(...found);
+      console.log(`${platform}: ${found.length} sonuç`);
+    } catch (e) {
+      console.log(`${platform}: HATA: ${e.message}`);
+    }
+    await page.close();
+    await new Promise((resolve) => setTimeout(resolve, 1500 + Math.random() * 1500));
+  }
+  const searchId = process.env.SEARCH_REQUEST_ID;
+  if (searchId) {
+    await searchSupabase.from('product_search_results').delete().eq('search_id', searchId);
+    if (results.length) {
+      await searchSupabase.from('product_search_results').insert(
+        results.map((result) => ({ search_id: searchId, ...result })),
+      );
+    }
+    await searchSupabase
+      .from('product_searches')
+      .update({ status: 'completed', completed_at: new Date().toISOString() })
+      .eq('id', searchId);
+  }
+  console.log(JSON.stringify({ query: searchQuery, results }));
   await browser.close();
   process.exit(0);
 }

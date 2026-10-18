@@ -13,6 +13,17 @@ on:
         description: 'Test URL listesi (virgülle ayır, boş = normal çalışma)'
         required: false
         type: string
+  repository_dispatch:
+    types: [product-search]
+      search_query:
+        description: 'Ürün adıyla mağaza araması (boş = fiyat kontrolü)'
+        required: false
+        type: string
+      search_platforms:
+        description: 'Aranacak mağazalar (virgülle ayır)'
+        required: false
+        default: 'Trendyol,n11,Hepsiburada,Amazon'
+        type: string
 
 concurrency:
   group: price-check
@@ -46,3 +57,6 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           TEST_URLS: ${{ inputs.test_urls }}
+          SEARCH_QUERY: ${{ github.event.client_payload.query || inputs.search_query }}
+          SEARCH_PLATFORMS: ${{ join(github.event.client_payload.platforms, ',') || inputs.search_platforms }}
+          SEARCH_REQUEST_ID: ${{ github.event.client_payload.search_id }}
