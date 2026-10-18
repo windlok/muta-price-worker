@@ -13,8 +13,6 @@ on:
         description: 'Test URL listesi (virgülle ayır, boş = normal çalışma)'
         required: false
         type: string
-  repository_dispatch:
-    types: [product-search]
       search_query:
         description: 'Ürün adıyla mağaza araması (boş = fiyat kontrolü)'
         required: false
@@ -24,6 +22,8 @@ on:
         required: false
         default: 'Trendyol,n11,Hepsiburada,Amazon'
         type: string
+  repository_dispatch:
+    types: [product-search]
 
 concurrency:
   group: price-check
