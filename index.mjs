@@ -28,6 +28,13 @@ const SEARCH_URLS = {
 };
 
 const SEARCH_SELECTORS = [
+  'div.p-card-wrppr',
+  'div.p-card-chldrn-cntnr',
+  'li.column',
+  'div.productArea',
+  'li.productListContent-zAP0Y',
+  'div[data-component-type="s-search-result"]',
+  'div[data-testid="product-card"]',
   '[data-testid="product-card"]',
   '[data-testid="product-card-wrapper"]',
   'article',
@@ -121,17 +128,31 @@ async function searchStore(page, platform, query) {
     };
     const output = [];
     const seen = new Set();
+    const cards = [];
     for (const selector of selectors) {
-      for (const card of document.querySelectorAll(selector)) {
-        const link = card.querySelector('a[href]');
+      for (const card of document.querySelectorAll(selector)) cards.push(card);
+    }
+    const candidates = cards.length
+      ? cards
+      : [...document.querySelectorAll('a[href]')].filter((link) => {
+          const href = link.href;
+          return /trendyol\.com|n11\.com|hepsiburada\.com|amazon\.com\.tr/.test(href)
+            && !/\/(arama|sr|search|gp\/browse|s\?)/i.test(href);
+        });
+    for (const card of candidates) {
+        const isLink = card.tagName === 'A';
+        const link = isLink ? card : card.querySelector('a[href]');
         const href = link?.href || '';
-        const name = (card.querySelector('h1,h2,h3,h4,[class*="name"],[class*="title"]')
-          ?.textContent || link?.textContent || '').replace(/\s+/g, ' ').trim();
-        const rawPrice = card.querySelector(
+        const name = (isLink
+          ? link.textContent
+          : card.querySelector('h1,h2,h3,h4,[class*="name"],[class*="title"]')
+              ?.textContent || link?.textContent || '')
+          .replace(/\s+/g, ' ').trim();
+        const rawPrice = card.querySelector?.(
           '[data-testid*="price"], [class*="price"], [class*="fiyat"]',
         )?.textContent;
-        const image = card.querySelector('img')?.src || null;
-        if (!href || !name || seen.has(href)) continue;
+        const image = card.querySelector?.('img')?.src || null;
+        if (!href || !name || name.length < 3 || seen.has(href)) continue;
         seen.add(href);
         output.push({
           platform: site,
@@ -141,8 +162,6 @@ async function searchStore(page, platform, query) {
           image_url: image,
         });
         if (output.length >= 12) return output;
-      }
-      if (output.length >= 12) break;
     }
     return output;
   }, { platform, searchUrl, selectors: SEARCH_SELECTORS });
